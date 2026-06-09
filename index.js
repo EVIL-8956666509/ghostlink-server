@@ -6,6 +6,11 @@ import cors from 'cors';
 const app = express();
 app.use(cors());
 
+// Health check for Render
+app.get('/', (req, res) => {
+  res.json({ status: 'ok', rooms: rooms.size });
+});
+
 const httpServer = createServer(app);
 const io = new Server(httpServer, {
   cors: {
