@@ -5,11 +5,7 @@ import cors from 'cors';
 
 const app = express();
 app.use(cors());
-
-// Health check for Render
-app.get('/', (req, res) => {
-  res.json({ status: 'ok', rooms: rooms.size });
-});
+app.use(express.json());
 
 const httpServer = createServer(app);
 const io = new Server(httpServer, {
@@ -21,9 +17,15 @@ const io = new Server(httpServer, {
 });
 
 const rooms = new Map();
-
-// Store display names per socket
 const socketNames = new Map();
+
+app.get('/', (req, res) => {
+  res.json({ status: 'ok', rooms: rooms.size, uptime: process.uptime() });
+});
+
+app.get('/health', (req, res) => {
+  res.json({ status: 'ok' });
+});
 
 function destroyRoom(token) {
   const room = rooms.get(token);
@@ -44,9 +46,7 @@ function destroyRoom(token) {
 function resetRoomTimer(token) {
   const room = rooms.get(token);
   if (!room) return;
-
   if (room.timer) clearTimeout(room.timer);
-
   room.timer = setTimeout(() => {
     destroyRoom(token);
   }, 30 * 60 * 1000);
@@ -57,14 +57,12 @@ io.on('connection', (socket) => {
 
   socket.on('room:create', (data) => {
     const { token, key, name } = data;
-
     if (rooms.has(token)) {
       socket.emit('error', { message: 'Room already exists' });
       return;
     }
 
     socketNames.set(socket.id, name || 'Anonymous');
-
     const room = {
       token,
       key,
@@ -104,7 +102,6 @@ io.on('connection', (socket) => {
     currentToken = token;
     room.lastActivity = Date.now();
 
-    // Get the other user's name
     let peerName = 'Anonymous';
     for (const [userId, userName] of room.users) {
       if (userId !== socket.id) {
@@ -114,22 +111,8 @@ io.on('connection', (socket) => {
     }
 
     socket.emit('room:joined', { token, key: room.key, peerName });
-
-    // Notify existing user about the new joiner's name
     socket.to(token).emit('room:peer-joined', { name: displayName });
-
-    // Tell the joiner about the existing user's name
-    socket.to(token).emit('room:peer-name', { name: displayName });
-
     resetRoomTimer(token);
-  });
-
-  socket.on('room:peer-request-name', (data) => {
-    const room = rooms.get(data.token);
-    if (!room) return;
-
-    const myName = socketNames.get(socket.id) || 'Anonymous';
-    socket.to(data.token).emit('room:peer-name', { name: myName });
   });
 
   socket.on('message:send', (data) => {
